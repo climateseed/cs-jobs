@@ -19,7 +19,8 @@ pub enum ExpirePolicy {
     Manual,
 
     /// The job is removed once it's result is fetched.
-    OnResultFetch,
+    /// Force the user to provide a timeout to avoid storing ad vitam aeternam.
+    OnResultFetch(Duration),
 
     /// The job is removed after a specified duration.
     Timeout(Duration),
@@ -258,9 +259,12 @@ impl Job {
 
                     self.payload.timestamps.finished = now;
 
-                    // If expire policy is set to timeout, then store the time of expiration
-                    if let ExpirePolicy::Timeout(duration) = self.expire_policy {
-                        self.payload.timestamps.expired = Some(now + duration);
+                    // If expire policy has a timeout, then store the time of expiration
+                    match self.expire_policy {
+                        ExpirePolicy::OnResultFetch(duration) | ExpirePolicy::Timeout(duration) => {
+                            self.payload.timestamps.expired = Some(now + duration)
+                        }
+                        _ => (),
                     }
                 }
             }

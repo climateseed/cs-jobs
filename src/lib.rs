@@ -337,8 +337,12 @@ mod tests {
             assert_eq!(jq.state(), State::Running);
 
             Runtime::new().unwrap().block_on(async {
+                let timeout = std::time::Duration::from_secs(1);
+
                 // Create the job and push it
-                let job = Job::new_with_expire(Routines::Nop, ExpirePolicy::OnResultFetch).unwrap();
+                let job = Job::new_with_expire(Routines::Nop, ExpirePolicy::OnResultFetch(timeout))
+                    .unwrap();
+
                 let job_id = job.id();
 
                 jq.enqueue(job).unwrap();
@@ -382,13 +386,13 @@ mod tests {
 
                 jq.enqueue(job).unwrap();
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(seconds)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(seconds / 2)).await;
 
                 // Verify that job is still present
                 assert!(jq.job_status(&job_id).await.is_ok());
 
                 // Wait for the timeout to be reached and check again
-                tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(seconds * 2)).await;
                 assert!(jq.job_status(&job_id).await.is_err());
 
                 // Stop the job queue

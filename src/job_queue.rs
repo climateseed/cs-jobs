@@ -356,7 +356,7 @@ where
 
         let result = backend.result(id)?.to_vec();
 
-        if backend.expire_policy(id)? == ExpirePolicy::OnResultFetch {
+        if let ExpirePolicy::OnResultFetch(_) = backend.expire_policy(id)? {
             if let Status::Finished(_) = backend.status(id)? {
                 backend.remove(id)?;
 
