@@ -2,8 +2,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use tokio::runtime::Builder;
-use tokio::sync::{oneshot, Mutex as AsyncMutex};
-use tokio::time::timeout;
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::memory_backend::*;
 use crate::prelude::*;
@@ -21,6 +20,9 @@ pub enum Message {
 /// Commands handled by the thread of the job queue.
 #[derive(PartialEq)]
 pub enum Cmd {
+    /// Check expirations times and remove jobs if needed.
+    CheckExpirations,
+
     /// Set current step for a job.
     SetStep(Uuid, u64),
 
@@ -71,6 +73,9 @@ pub struct JobQueue<RoutineType, Context> {
 
     /// Join handle used to wait the thread of the job queue.
     join_handle: Option<JoinHandle<()>>,
+
+    /// Join handle used to wait the thread of the expiration checking.
+    expiration_join_handle: Option<JoinHandle<()>>,
 
     /// Backend used to store the list of jobs with their results.
     backend: SharedBackend<RoutineType, Context>,
@@ -125,6 +130,7 @@ where
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
             join_handle: None,
+            expiration_join_handle: None,
             backend: Arc::new(AsyncMutex::new(Box::new(MemoryBackend::new()))),
             runtime: Arc::new(Mutex::new(runtime)),
             notification_handler: Arc::new(|_| {}),
@@ -177,7 +183,7 @@ where
     pub fn start(&mut self) -> Result<(), ApiError> {
         self.try_starting()?;
 
-        // Clone ressources to be used by the thread
+        // Thread waiting for messages and jobs
         let backend = self.backend.clone();
         let runtime = self.runtime.clone();
         let rx = self.rx.clone();
@@ -216,6 +222,34 @@ where
         });
 
         self.join_handle = Some(handle);
+
+        // Thread checking the expirations
+        let notification_handler = self.notification_handler.clone();
+        let messages_channel = self.tx.clone();
+
+        let handle = std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+
+            let messages_channel = match messages_channel.lock() {
+                Ok(messages_channel) => messages_channel,
+                Err(e) => {
+                    notification_handler(Notification::Error(Error::CannotAccessSender(
+                        e.to_string(),
+                    )));
+
+                    return;
+                }
+            };
+
+            if let Err(e) = messages_channel.send(Message::Command(Cmd::CheckExpirations)) {
+                notification_handler(Notification::Error(Error::CannotSendMessage(e.to_string())));
+
+                return;
+            }
+        });
+
+        self.expiration_join_handle = Some(handle);
+
         self.state = State::Running;
 
         Ok(())
@@ -232,17 +266,26 @@ where
             if handle.join().is_err() {
                 return Err(api_err!(Error::CannotJoinThread));
             }
-
-            // TODO
-            //self.runtime
-            //.lock()
-            //.unwrap()
-            //.shutdown_timeout(std::time::Duration::from_millis(100));
-
-            Ok(())
         } else {
-            Err(api_err!(Error::MissingJoinHandle))
+            return Err(api_err!(Error::MissingJoinHandle));
         }
+
+        // TODO: allow the thread to be stopped
+        //if let Some(handle) = self.expiration_join_handle {
+        //if handle.join().is_err() {
+        //return Err(api_err!(Error::CannotJoinThread));
+        //}
+        //} else {
+        //return Err(api_err!(Error::MissingJoinHandle));
+        //}
+
+        // TODO
+        //self.runtime
+        //.lock()
+        //.unwrap()
+        //.shutdown_timeout(std::time::Duration::from_millis(100));
+
+        Ok(())
     }
 
     /// Send a stop command to the queue.
@@ -451,6 +494,20 @@ where
             let mut backend = backend.lock().await;
 
             match cmd {
+                Cmd::CheckExpirations => {
+                    if let Ok(job_ids) = backend
+                        .remove_expired()
+                        .map_err(|e| notification_handler(Notification::Error(*e)))
+                    {
+                        for job_id in job_ids {
+                            notification_handler(Notification::Status(
+                                job_id.to_owned(),
+                                Status::Removed,
+                            ));
+                        }
+                    }
+                }
+
                 Cmd::SetSteps(job_id, steps) => {
                     if let Ok(p) = backend
                         .set_steps(&job_id, steps)
@@ -502,8 +559,6 @@ where
             .lock()
             .map_err(|e| Error::CannotAccessRuntime(e.to_string()))?;
 
-        let runtime = runtime.clone();
-
         rt.block_on(async {
             let mut bk = backend.lock().await;
 
@@ -524,7 +579,6 @@ where
 
         rt.spawn(async move {
             let mut bk = backend.lock().await;
-            let backend = backend.clone();
 
             // Set status of the job to `Status::Running`
             if bk
@@ -559,46 +613,6 @@ where
             }
 
             notification_handler(Notification::Status(job_id, status));
-
-            // Run expiration timer if needed
-            let policy = match bk.expire_policy(&job_id) {
-                Ok(policy) => policy,
-                Err(e) => {
-                    notification_handler(Notification::Error(*e));
-                    return;
-                }
-            };
-
-            let duration = match policy {
-                ExpirePolicy::Timeout(duration) => duration,
-                _ => return,
-            };
-
-            let rt = match runtime
-                .lock()
-                .map_err(|e| Error::CannotAccessRuntime(e.to_string()))
-            {
-                Ok(rt) => rt,
-                _ => return,
-            };
-
-            rt.spawn(async move {
-                // Block until timeout is reached (rx channel won't receive anything so we'll reach
-                // the timeout's duration). `timeout` will return an error if the timeout is
-                // reached so just skip the result.
-                let (_tx, rx) = oneshot::channel::<bool>();
-
-                let _ = timeout(duration, rx).await;
-
-                // Remove job from the backend
-                let _ = backend
-                    .lock()
-                    .await
-                    .remove(&job_id)
-                    .map_err(|e| notification_handler(Notification::Error(*e)));
-
-                notification_handler(Notification::Status(job_id.to_owned(), Status::Removed));
-            });
         });
 
         Ok(())

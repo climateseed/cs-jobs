@@ -22,6 +22,11 @@ mod tests {
         name: String,
     }
 
+    #[derive(Serialize, Deserialize)]
+    struct PrivateData {
+        value: u8,
+    }
+
     fn notification_handler(notification: Notification) {
         match notification {
             Notification::Error(e) => println!("ERR: {e}"),
@@ -53,9 +58,16 @@ mod tests {
         value: bool,
     }
 
+    #[derive(Clone, Serialize, Deserialize)]
+    struct CheckPrivateDataArgs {
+        value: u8,
+        expect_no_data: bool,
+    }
+
     #[derive(Serialize, Deserialize)]
     enum Routines {
         CheckContext,
+        CheckPrivateData(CheckPrivateDataArgs),
         Nop,
         RaiseError,
         SetFlag(SetFlagArgs),
@@ -65,7 +77,7 @@ mod tests {
     impl Routine<Context> for Routines {
         async fn call(
             &self,
-            job_id: Uuid,
+            job: &Job,
             messages_channel: SharedMessageChannel,
             context: Option<Shared<Context>>,
         ) -> Result<Vec<u8>, Error> {
@@ -73,6 +85,17 @@ mod tests {
                 Self::CheckContext => {
                     assert!(context.is_some());
                     assert_eq!(&context.unwrap().lock().unwrap().name, "UNIT_TESTING");
+
+                    Ok(vec![])
+                }
+
+                Self::CheckPrivateData(args) => {
+                    if args.expect_no_data {
+                        assert!(job.private_data::<PrivateData>().is_err());
+                    } else {
+                        let data = job.private_data::<PrivateData>().unwrap();
+                        assert_eq!(data.value, args.value);
+                    }
 
                     Ok(vec![])
                 }
@@ -89,7 +112,7 @@ mod tests {
                     set_flag(args.clone());
 
                     messages_channel
-                        .send(Message::Command(Cmd::SetSteps(job_id, 2)))
+                        .send(Message::Command(Cmd::SetSteps(job.id(), 2)))
                         .unwrap();
 
                     let json = serde_json::json!({
@@ -97,13 +120,13 @@ mod tests {
                     });
 
                     messages_channel
-                        .send(Message::Command(Cmd::SetStep(job_id, 1)))
+                        .send(Message::Command(Cmd::SetStep(job.id(), 1)))
                         .unwrap();
 
                     let bytes = json.to_string().into_bytes();
 
                     messages_channel
-                        .send(Message::Command(Cmd::SetStep(job_id, 2)))
+                        .send(Message::Command(Cmd::SetStep(job.id(), 2)))
                         .unwrap();
 
                     Ok(bytes)
@@ -191,37 +214,115 @@ mod tests {
         jq.join().unwrap();
     }
 
-    #[test]
-    fn context() {
-        let mut jq = JobQueueBuilder::<Routines, Context>::new()
-            .unwrap()
-            .context(Context {
-                name: "UNIT_TESTING".to_string(),
-            })
-            .build();
+    mod context {
+        use super::*;
 
-        // Start queue
-        jq.start().unwrap();
-        assert_eq!(jq.state(), State::Running);
+        #[test]
+        fn check_context() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new()
+                .unwrap()
+                .context(Context {
+                    name: "UNIT_TESTING".to_string(),
+                })
+                .build();
 
-        Runtime::new().unwrap().block_on(async {
-            // Create the job and push it
-            let job = Job::new(Routines::CheckContext).unwrap();
-            let job_id = job.id();
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
 
-            jq.enqueue(job).unwrap();
+            Runtime::new().unwrap().block_on(async {
+                // Create the job and push it
+                let job = Job::new(Routines::CheckContext).unwrap();
+                let job_id = job.id();
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                jq.enqueue(job).unwrap();
 
-            // Verify that job has been processed
-            let status = jq.job_status(&job_id).await.unwrap();
-            assert_eq!(status, Status::Finished(ResultStatus::Success));
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-            // Stop the job queue
-            jq.stop().unwrap();
-        });
+                // Verify that job has been processed
+                let status = jq.job_status(&job_id).await.unwrap();
+                assert_eq!(status, Status::Finished(ResultStatus::Success));
 
-        jq.join().unwrap();
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
+    }
+
+    mod private_data {
+        use super::*;
+
+        #[test]
+        fn check_private_data() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new().unwrap().build();
+
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
+
+            Runtime::new().unwrap().block_on(async {
+                let value = 13;
+
+                // Create the job and push it
+                let mut job = Job::new(Routines::CheckPrivateData(CheckPrivateDataArgs {
+                    value,
+                    expect_no_data: false,
+                }))
+                .unwrap();
+
+                job.set_private_data(PrivateData { value }).unwrap();
+
+                let job_id = job.id();
+
+                jq.enqueue(job).unwrap();
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+                // Verify that job has been processed
+                let status = jq.job_status(&job_id).await.unwrap();
+                assert_eq!(status, Status::Finished(ResultStatus::Success));
+
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
+
+        #[test]
+        fn check_no_private_data() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new().unwrap().build();
+
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
+
+            Runtime::new().unwrap().block_on(async {
+                // Create the job and push it
+                let job = Job::new(Routines::CheckPrivateData(CheckPrivateDataArgs {
+                    value: 0,
+                    expect_no_data: true,
+                }))
+                .unwrap();
+
+                let job_id = job.id();
+
+                jq.enqueue(job).unwrap();
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+                // Verify that job has been processed
+                let status = jq.job_status(&job_id).await.unwrap();
+                assert_eq!(status, Status::Finished(ResultStatus::Success));
+
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
     }
 
     mod expire {
@@ -268,12 +369,12 @@ mod tests {
             assert_eq!(jq.state(), State::Running);
 
             Runtime::new().unwrap().block_on(async {
-                let ms = 20;
+                let seconds = 1;
 
                 // Create the job and push it
                 let job = Job::new_with_expire(
                     Routines::Nop,
-                    ExpirePolicy::Timeout(std::time::Duration::from_millis(ms)),
+                    ExpirePolicy::Timeout(std::time::Duration::from_secs(seconds)),
                 )
                 .unwrap();
 
@@ -281,13 +382,13 @@ mod tests {
 
                 jq.enqueue(job).unwrap();
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(seconds)).await;
 
                 // Verify that job is still present
                 assert!(jq.job_status(&job_id).await.is_ok());
 
                 // Wait for the timeout to be reached and check again
-                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
                 assert!(jq.job_status(&job_id).await.is_err());
 
                 // Stop the job queue

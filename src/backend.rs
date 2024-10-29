@@ -13,7 +13,7 @@ pub type SharedBackend<Routine, Context> = Arc<Mutex<Box<dyn Backend<Routine, Co
 pub trait Backend<Routine, Context>: Send {
     /// Schedule a job to be processed.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `job` - Job structure to be processed.
     ///
     /// # Errors
@@ -22,7 +22,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Run a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be run.
     /// * `context` - Context maybe needed by the jobs.
     /// * `messages_channel` - Channel used to send messages to the queue.
@@ -38,7 +38,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Get the status of a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be fetched.
     ///
     /// # Returns
@@ -50,7 +50,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Set the status of a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be modified.
     /// * `status` - Status to be set.
     ///
@@ -60,7 +60,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Get the result of a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be fetched.
     ///
     /// # Returns
@@ -72,7 +72,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Set the number of steps for a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be modified.
     /// * `steps` - Number of steps to set.
     ///
@@ -85,7 +85,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Set the current step for a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be modified.
     /// * `step` - Current step to set.
     ///
@@ -98,7 +98,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Get the progression of a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be fetched.
     ///
     /// # Returns
@@ -110,7 +110,7 @@ pub trait Backend<Routine, Context>: Send {
 
     /// Get the expire policy of a job.
     ///
-    /// # Arguments:
+    /// # Arguments
     /// * `id` - Job identifier to be fetched.
     ///
     /// # Returns
@@ -128,4 +128,13 @@ pub trait Backend<Routine, Context>: Send {
     /// # Errors
     /// One of `Error` enum.
     fn remove(&mut self, id: &Uuid) -> Result<(), ApiError>;
+
+    /// Remove all expired jobs.
+    ///
+    /// # Returns
+    /// The list of job IDs removed.
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    fn remove_expired(&mut self) -> Result<Vec<Uuid>, ApiError>;
 }

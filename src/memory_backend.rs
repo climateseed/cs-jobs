@@ -113,6 +113,26 @@ where
             _ => Err(api_err!(Error::JobNotFinished)),
         }
     }
+
+    fn remove_expired(&mut self) -> Result<Vec<Uuid>, ApiError> {
+        let to_remove: Vec<_> = self
+            .jobs
+            .iter()
+            .filter_map(|(job_id, job)| {
+                if job.is_expired() {
+                    Some(job_id.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for job_id in &to_remove {
+            self.jobs.remove(job_id);
+        }
+
+        Ok(to_remove)
+    }
 }
 
 impl MemoryBackend {
