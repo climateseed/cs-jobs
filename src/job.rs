@@ -68,7 +68,7 @@ pub struct Progression {
 }
 
 /// Structure used to store timestamps and result of the job.
-#[derive(PartialEq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
 pub struct Payload {
     /// Timestamps for every step of the job.
     pub timestamps: Timestamps,
@@ -78,7 +78,7 @@ pub struct Payload {
 }
 
 /// Timestamps of every steps of the lifecycle of a job.
-#[derive(PartialEq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
 pub struct Timestamps {
     /// Timestamp at which the job is enqueued.
     pub enqueued: SystemTime,
@@ -116,7 +116,7 @@ pub trait Routine<Context>: for<'a> Deserialize<'a> + Serialize + Send {
 }
 
 /// Description of a job.
-#[derive(PartialEq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
 pub struct Job {
     /// Unique identifier of the job.
     id: Uuid,
@@ -410,17 +410,14 @@ impl Job {
     /// # Errors
     /// One of `Error` enum.
     pub async fn run<T: Routine<Context>, Context>(
-        &mut self,
+        &self,
         messages_channel: SharedMessageChannel,
         context: Option<Shared<Context>>,
-    ) -> Result<(), ApiError> {
+    ) -> Result<Vec<u8>, ApiError> {
         // Routine information is stored as string so deserialize it
         let routine: T = serde_json::from_str(&self.routine).map_err(|e| api_err!(e.into()))?;
 
         // Call the routine
-        let result = routine.call(self, messages_channel, context).await?;
-
-        // Store the result
-        self.set_result(result)
+        Ok(routine.call(self, messages_channel, context).await?)
     }
 }

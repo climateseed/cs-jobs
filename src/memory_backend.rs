@@ -16,6 +16,14 @@ where
     RoutineType: Routine<Context> + Sync,
     for<'async_trait> Context: Send + 'async_trait,
 {
+    async fn get(&mut self, id: &Uuid) -> Result<Job, ApiError> {
+        Ok(self
+            .jobs
+            .get(id)
+            .ok_or(api_err!(Error::JobNotFound(id.to_owned())))?
+            .to_owned())
+    }
+
     fn schedule(&mut self, job: Job) -> Result<(), ApiError> {
         self.jobs.insert(job.id(), job);
 
@@ -62,6 +70,16 @@ where
             .get(id)
             .ok_or(api_err!(Error::JobNotFound(id.to_owned())))?
             .result())
+    }
+
+    fn set_result(&mut self, id: &Uuid, result: Vec<u8>) -> Result<(), ApiError> {
+        if let Some(job) = self.jobs.get_mut(id) {
+            job.set_result(result)?;
+
+            Ok(())
+        } else {
+            Err(api_err!(Error::JobNotFound(id.to_owned())))
+        }
     }
 
     fn set_steps(&mut self, id: &Uuid, steps: u64) -> Result<Progression, ApiError> {

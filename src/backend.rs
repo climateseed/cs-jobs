@@ -11,6 +11,18 @@ pub type SharedBackend<Routine, Context> = Arc<Mutex<Box<dyn Backend<Routine, Co
 /// and their results.
 #[async_trait]
 pub trait Backend<Routine, Context>: Send {
+    /// Get a job.
+    ///
+    /// # Arguments
+    /// * `id` - Job identifier to be run.
+    ///
+    /// # Returns
+    /// The job instance.
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    async fn get(&mut self, id: &Uuid) -> Result<Job, ApiError>;
+
     /// Schedule a job to be processed.
     ///
     /// # Arguments
@@ -69,6 +81,16 @@ pub trait Backend<Routine, Context>: Send {
     /// # Errors
     /// One of `Error` enum.
     fn result(&self, id: &Uuid) -> Result<&[u8], ApiError>;
+
+    /// Set the result of a job.
+    ///
+    /// # Arguments
+    /// * `id` - Job identifier to be modified.
+    /// * `result` - Result to be set.
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    fn set_result(&mut self, id: &Uuid, result: Vec<u8>) -> Result<(), ApiError>;
 
     /// Set the number of steps for a job.
     ///
