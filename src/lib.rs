@@ -449,6 +449,47 @@ mod tests {
         }
     }
 
+    mod concurrent_access {
+        use super::*;
+
+        #[test]
+        fn can_access() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new_with_pool_size(1)
+                .unwrap()
+                .build();
+
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
+
+            Runtime::new().unwrap().block_on(async {
+                // Create the jobs and push them
+                let job = Job::new(Routines::Sleep(SleepArgs {
+                    duration: tokio::time::Duration::from_secs(1),
+                }))
+                .unwrap();
+
+                jq.enqueue(job).unwrap();
+
+                let job = Job::new(Routines::Nop).unwrap();
+                let job_id = job.id();
+
+                jq.enqueue(job).unwrap();
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+                // Verify that job has been processed
+                let status = jq.job_status(&job_id).await.unwrap();
+                assert_eq!(status, Status::Finished(ResultStatus::Success));
+
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
+    }
+
     mod errors {
         use super::*;
 
