@@ -17,6 +17,7 @@ mod tests {
     use crate::prelude::*;
 
     static FLAG: Mutex<bool> = Mutex::new(false);
+    static COUNTER: Mutex<u32> = Mutex::new(0);
 
     struct Context {
         name: String,
@@ -39,6 +40,18 @@ mod tests {
                 println!("STATUS({id}): {status:#?}")
             }
         }
+    }
+
+    fn reset_counter() {
+        *COUNTER.lock().unwrap() = 0;
+    }
+
+    fn increment_counter() {
+        *COUNTER.lock().unwrap() += 1;
+    }
+
+    fn check_counter(expected: u32) {
+        assert_eq!(*COUNTER.lock().unwrap(), expected);
     }
 
     fn reset_flag() {
@@ -75,6 +88,7 @@ mod tests {
         CheckPrivateData(CheckPrivateDataArgs),
         Nop,
         RaiseError,
+        SetCounter,
         SetFlag(SetFlagArgs),
         Sleep(SleepArgs),
     }
@@ -110,6 +124,12 @@ mod tests {
 
                 Self::RaiseError => {
                     return Err(Error::Custom("This is a failure".to_string()));
+                }
+
+                Self::SetCounter => {
+                    increment_counter();
+
+                    Ok(vec![])
                 }
 
                 Self::SetFlag(args) => {
@@ -454,9 +474,7 @@ mod tests {
 
         #[test]
         fn can_access() {
-            let mut jq = JobQueueBuilder::<Routines, Context>::new_with_pool_size(1)
-                .unwrap()
-                .build();
+            let mut jq = JobQueueBuilder::<Routines, Context>::new().unwrap().build();
 
             // Start queue
             jq.start().unwrap();
@@ -481,6 +499,70 @@ mod tests {
                 // Verify that job has been processed
                 let status = jq.job_status(&job_id).await.unwrap();
                 assert_eq!(status, Status::Finished(ResultStatus::Success));
+
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
+    }
+
+    mod stress {
+        use super::*;
+
+        #[test]
+        fn enqueue_10() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new().unwrap().build();
+
+            reset_counter();
+
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
+
+            Runtime::new().unwrap().block_on(async {
+                for _ in 0..10 {
+                    // Create the jobs and push thme
+                    let job = Job::new(Routines::SetCounter).unwrap();
+
+                    jq.enqueue(job).unwrap();
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                // Verify that job has been processed
+                check_counter(10);
+
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
+
+        #[test]
+        fn enqueue_100() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new().unwrap().build();
+
+            reset_counter();
+
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
+
+            Runtime::new().unwrap().block_on(async {
+                for _ in 0..100 {
+                    // Create the jobs and push thme
+                    let job = Job::new(Routines::SetCounter).unwrap();
+
+                    jq.enqueue(job).unwrap();
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                // Verify that job has been processed
+                check_counter(100);
 
                 // Stop the job queue
                 jq.stop().unwrap();

@@ -157,4 +157,5 @@ You can, for example, plug it to a REDIS database to store the jobs and their re
 
 - Retry/clean at startup
 - Sub jobs ?
-- Improve unit tests
+- Get list of jobs
+- Attach a type or friendly-name to a job
