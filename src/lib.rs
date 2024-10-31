@@ -64,6 +64,11 @@ mod tests {
         expect_no_data: bool,
     }
 
+    #[derive(Clone, Serialize, Deserialize)]
+    struct SleepArgs {
+        duration: std::time::Duration,
+    }
+
     #[derive(Serialize, Deserialize)]
     enum Routines {
         CheckContext,
@@ -71,6 +76,7 @@ mod tests {
         Nop,
         RaiseError,
         SetFlag(SetFlagArgs),
+        Sleep(SleepArgs),
     }
 
     #[async_trait]
@@ -130,6 +136,12 @@ mod tests {
                         .unwrap();
 
                     Ok(bytes)
+                }
+
+                Self::Sleep(args) => {
+                    tokio::time::sleep(args.duration).await;
+
+                    Ok(vec![])
                 }
             }
         }
@@ -206,6 +218,40 @@ mod tests {
             // Verify that job has been processed
             let status = jq.job_status(&job_id).await.unwrap();
             assert_eq!(status, Status::Finished(ResultStatus::Success));
+
+            // Stop the job queue
+            jq.stop().unwrap();
+        });
+
+        jq.join().unwrap();
+    }
+
+    #[test]
+    fn no_locking() {
+        let mut jq = JobQueueBuilder::<Routines, Context>::new_with_pool_size(1)
+            .unwrap()
+            .build();
+
+        // Start queue
+        jq.start().unwrap();
+        assert_eq!(jq.state(), State::Running);
+
+        Runtime::new().unwrap().block_on(async {
+            // Create the job and push it
+            let job = Job::new(Routines::Sleep(SleepArgs {
+                duration: tokio::time::Duration::from_millis(100),
+            }))
+            .unwrap();
+
+            let job_id = job.id();
+
+            jq.enqueue(job).unwrap();
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+            // Verify that job has been processed
+            let status = jq.job_status(&job_id).await.unwrap();
+            assert_eq!(status, Status::Running);
 
             // Stop the job queue
             jq.stop().unwrap();

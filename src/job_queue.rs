@@ -578,10 +578,10 @@ where
         });
 
         rt.spawn(async move {
-            let mut bk = backend.lock().await;
-
             // Set status of the job to `Status::Running`
-            if bk
+            if backend
+                .lock()
+                .await
                 .set_status(&job_id, Status::Running)
                 .map_err(|e| notification_handler(Notification::Error(*e)))
                 .is_err()
@@ -592,19 +592,39 @@ where
             notification_handler(Notification::Status(job_id, Status::Running));
 
             // Call the routine of the job
-            let result_status = match bk
-                .run(&job_id, context, messages_channel)
-                .await
-                .map_err(|e| notification_handler(Notification::Error(*e)))
-            {
-                Ok(_) => ResultStatus::Success,
-                _ => ResultStatus::Error,
+            let mut result_status = ResultStatus::Error;
+
+            let job = match backend.lock().await.get(&job_id).await {
+                Ok(job) => job,
+                Err(e) => {
+                    notification_handler(Notification::Error(*e));
+                    return;
+                }
             };
+
+            let result = job
+                .run::<RoutineType, Context>(messages_channel, context)
+                .await
+                .map_err(|e| notification_handler(Notification::Error(*e)));
+
+            if let Ok(bytes) = result {
+                if backend
+                    .lock()
+                    .await
+                    .set_result(&job_id, bytes)
+                    .map_err(|e| notification_handler(Notification::Error(*e)))
+                    .is_ok()
+                {
+                    result_status = ResultStatus::Success;
+                }
+            }
 
             // Set status of the job to `Status::Finished`
             let status = Status::Finished(result_status);
 
-            if bk
+            if backend
+                .lock()
+                .await
                 .set_status(&job_id, status)
                 .map_err(|e| notification_handler(Notification::Error(*e)))
                 .is_err()
