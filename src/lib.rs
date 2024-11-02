@@ -66,23 +66,23 @@ mod tests {
         *FLAG.lock().unwrap() = args.value;
     }
 
-    #[derive(Clone, Serialize, Deserialize)]
+    #[derive(Clone, PartialEq, Serialize, Deserialize)]
     struct SetFlagArgs {
         value: bool,
     }
 
-    #[derive(Clone, Serialize, Deserialize)]
+    #[derive(Clone, PartialEq, Serialize, Deserialize)]
     struct CheckPrivateDataArgs {
         value: u8,
         expect_no_data: bool,
     }
 
-    #[derive(Clone, Serialize, Deserialize)]
+    #[derive(Clone, PartialEq, Serialize, Deserialize)]
     struct SleepArgs {
         duration: std::time::Duration,
     }
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(PartialEq, Serialize, Deserialize)]
     enum Routines {
         CheckContext,
         CheckPrivateData(CheckPrivateDataArgs),
@@ -523,7 +523,7 @@ mod tests {
 
             Runtime::new().unwrap().block_on(async {
                 for _ in 0..10 {
-                    // Create the jobs and push thme
+                    // Create the jobs and push them
                     let job = Job::new(Routines::SetCounter).unwrap();
 
                     jq.enqueue(job).unwrap();
@@ -553,7 +553,7 @@ mod tests {
 
             Runtime::new().unwrap().block_on(async {
                 for _ in 0..100 {
-                    // Create the jobs and push thme
+                    // Create the jobs and push them
                     let job = Job::new(Routines::SetCounter).unwrap();
 
                     jq.enqueue(job).unwrap();
@@ -563,6 +563,55 @@ mod tests {
 
                 // Verify that job has been processed
                 check_counter(100);
+
+                // Stop the job queue
+                jq.stop().unwrap();
+            });
+
+            jq.join().unwrap();
+        }
+    }
+
+    mod list {
+        use super::*;
+
+        #[test]
+        fn get_all() {
+            let mut jq = JobQueueBuilder::<Routines, Context>::new().unwrap().build();
+
+            reset_counter();
+
+            // Start queue
+            jq.start().unwrap();
+            assert_eq!(jq.state(), State::Running);
+
+            Runtime::new().unwrap().block_on(async {
+                let mut jobs = Vec::new();
+
+                for _ in 0..10 {
+                    // Create the jobs and push them
+                    let job = Job::new(Routines::Nop).unwrap();
+
+                    jobs.push(job.clone());
+
+                    jq.enqueue(job).unwrap();
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+                // Get the list and check
+                let fetched = jq.jobs().await.unwrap();
+                assert_eq!(fetched.len(), 10);
+
+                for job in jobs {
+                    assert!(fetched.iter().find(|e| e.id() == job.id()).is_some());
+                }
+
+                for job in fetched {
+                    if job.routine::<Routines, Context>().unwrap() != Routines::Nop {
+                        assert!(false);
+                    }
+                }
 
                 // Stop the job queue
                 jq.stop().unwrap();

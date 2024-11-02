@@ -402,6 +402,19 @@ impl Job {
         Ok(())
     }
 
+    /// Get the routine for this job.
+    ///
+    /// # Returns
+    /// The routine (typed).
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    pub fn routine<T: Routine<Context>, Context>(&self) -> Result<T, ApiError> {
+        let routine: T = serde_json::from_str(&self.routine).map_err(|e| api_err!(e.into()))?;
+
+        Ok(routine)
+    }
+
     /// Call the underlying routine of the job.
     ///
     /// # Arguments

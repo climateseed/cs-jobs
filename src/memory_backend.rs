@@ -151,6 +151,10 @@ where
 
         Ok(to_remove)
     }
+
+    fn jobs(&self) -> Result<Vec<Job>, ApiError> {
+        Ok(self.jobs.values().cloned().collect())
+    }
 }
 
 impl MemoryBackend {
