@@ -159,4 +159,13 @@ pub trait Backend<Routine, Context>: Send {
     /// # Errors
     /// One of `Error` enum.
     fn remove_expired(&mut self) -> Result<Vec<Uuid>, ApiError>;
+
+    /// Get the list of all jobs.
+    ///
+    /// # Returns
+    /// The list of jobs
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    fn jobs(&self) -> Result<Vec<Job>, ApiError>;
 }

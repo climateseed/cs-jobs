@@ -381,6 +381,17 @@ where
         self.backend.lock().await.progression(id)
     }
 
+    /// Get the list of jobs.
+    ///
+    /// # Returns
+    /// The list of jobs.
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    pub async fn jobs(&self) -> Result<Vec<Job>, ApiError> {
+        self.backend.lock().await.jobs()
+    }
+
     /// Removes a finished job from the queue.
     ///
     /// # Arguments
