@@ -66,23 +66,23 @@ mod tests {
         *FLAG.lock().unwrap() = args.value;
     }
 
-    #[derive(Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     struct SetFlagArgs {
         value: bool,
     }
 
-    #[derive(Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     struct CheckPrivateDataArgs {
         value: u8,
         expect_no_data: bool,
     }
 
-    #[derive(Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     struct SleepArgs {
         duration: std::time::Duration,
     }
 
-    #[derive(PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
     enum Routines {
         CheckContext,
         CheckPrivateData(CheckPrivateDataArgs),
@@ -196,10 +196,13 @@ mod tests {
 
             // Verify that job has been processed
             check_flag();
+            let routine = jq.job_routine(&job_id).await.unwrap();
+            let expected_routine = Routines::SetFlag(SetFlagArgs { value: true });
             let bytes = jq.job_result(&job_id).await.unwrap();
             let result: Value = serde_json::from_slice(&bytes).unwrap();
             let status = jq.job_status(&job_id).await.unwrap();
             let progression = jq.job_progression(&job_id).await.unwrap();
+            assert_eq!(routine, expected_routine);
             assert_eq!(result["result"], "SET_FLAG_OK");
             assert_eq!(status, Status::Finished(ResultStatus::Success));
             assert_eq!(progression.step, 2);

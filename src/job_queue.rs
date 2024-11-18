@@ -381,6 +381,20 @@ where
         self.backend.lock().await.progression(id)
     }
 
+    /// Get the routine of a job.
+    ///
+    /// # Arguments
+    /// * `id` - ID of the job to be inspected.
+    ///
+    /// # Returns
+    /// The routine of the job.
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    pub async fn job_routine(&self, id: &Uuid) -> Result<RoutineType, ApiError> {
+        self.backend.lock().await.routine(id)
+    }
+
     /// Get the list of jobs.
     ///
     /// # Returns

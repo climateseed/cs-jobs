@@ -10,7 +10,10 @@ pub type SharedBackend<Routine, Context> = Arc<Mutex<Box<dyn Backend<Routine, Co
 /// Backend trait that defines the behavior of the backend that is responsible for storing the job
 /// and their results.
 #[async_trait]
-pub trait Backend<Routine, Context>: Send {
+pub trait Backend<RoutineType, Context>: Send
+where
+    RoutineType: Routine<Context> + Sync,
+{
     /// Get a job.
     ///
     /// # Arguments
@@ -129,6 +132,18 @@ pub trait Backend<Routine, Context>: Send {
     /// # Errors
     /// One of `Error` enum.
     fn progression(&self, id: &Uuid) -> Result<Progression, ApiError>;
+
+    /// Get the routine of a job.
+    ///
+    /// # Arguments
+    /// * `id` - Job identifier to be fetched.
+    ///
+    /// # Returns
+    /// The routine of the job as `Progression`.
+    ///
+    /// # Errors
+    /// One of `Error` enum.
+    fn routine(&self, id: &Uuid) -> Result<RoutineType, ApiError>;
 
     /// Get the expire policy of a job.
     ///
