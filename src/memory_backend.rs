@@ -106,6 +106,13 @@ where
             .progression())
     }
 
+    fn routine(&self, id: &Uuid) -> Result<RoutineType, ApiError> {
+        self.jobs
+            .get(id)
+            .ok_or(api_err!(Error::JobNotFound(id.to_owned())))?
+            .routine()
+    }
+
     fn expire_policy(&self, id: &Uuid) -> Result<ExpirePolicy, ApiError> {
         Ok(self
             .jobs
