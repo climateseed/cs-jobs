@@ -156,7 +156,7 @@ impl Job {
     /// # Errors
     /// One of `Error` enum.
     pub fn new<Context>(routine: impl Routine<Context>) -> Result<Self, ApiError> {
-        Self::new_with_expire(routine, ExpirePolicy::default())
+        Self::new_with_expire(routine, ExpirePolicy::OnResultFetch(60))
     }
 
     /// Creates a new job given a routine to be executed and an expire policy.
@@ -432,5 +432,20 @@ impl Job {
 
         // Call the routine
         Ok(routine.call(self, messages_channel, context).await?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExpirePolicy;
+    use super::Job;
+
+    fn job_default_expiration_policy_on_result_fetch() {
+        let job = Job::new(Routines::Nop).unwrap();
+
+        assert_eq!(
+            job.expire_policy(),
+            ExpirePolicy::OnResultFetch(Duration::from_secs(60))
+        );
     }
 }
