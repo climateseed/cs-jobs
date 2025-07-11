@@ -1,3 +1,4 @@
+use serde_json::json;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -629,10 +630,18 @@ where
 
             let result = job
                 .run::<RoutineType, Context>(messages_channel, context)
-                .await
-                .map_err(|e| notification_handler(Notification::Error(*e)));
+                .await;
 
-            if let Ok(bytes) = result {
+            let (bytes, maybe_err, status) = match result {
+                Ok(bytes) => (Some(bytes), None, ResultStatus::Success),
+                Err(err) => (
+                    Self::string_to_json_error(&err.to_string()).ok(), // Formatting to JSON as expected
+                    Some(err),
+                    ResultStatus::Error,
+                ),
+            };
+
+            if let Some(bytes) = bytes {
                 if backend
                     .lock()
                     .await
@@ -640,7 +649,10 @@ where
                     .map_err(|e| notification_handler(Notification::Error(*e)))
                     .is_ok()
                 {
-                    result_status = ResultStatus::Success;
+                    result_status = status;
+                    if let Some(err) = maybe_err {
+                        notification_handler(Notification::Error(*err));
+                    }
                 }
             }
 
@@ -661,5 +673,11 @@ where
         });
 
         Ok(())
+    }
+
+    fn string_to_json_error(str_error: &str) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(&json!({
+            "error": str_error,
+        }))
     }
 }

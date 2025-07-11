@@ -35,7 +35,7 @@ pub enum Error {
     #[error("{0}")]
     Custom(String),
     #[error(transparent)]
-    GenericError(#[from] Box<dyn std::error::Error>),
+    GenericError(#[from] Box<dyn std::error::Error + Send + Sync>),
     #[error("Invalid job status")]
     InvalidJobStatus,
     #[error("Invalid job status transition: {0:?}")]
