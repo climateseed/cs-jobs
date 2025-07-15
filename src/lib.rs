@@ -19,7 +19,7 @@ mod tests {
     static FLAG: Mutex<bool> = Mutex::new(false);
     static COUNTER: Mutex<u32> = Mutex::new(0);
 
-    struct Context {
+    pub struct Context {
         name: String,
     }
 
@@ -67,23 +67,23 @@ mod tests {
     }
 
     #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-    struct SetFlagArgs {
+    pub struct SetFlagArgs {
         value: bool,
     }
 
     #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-    struct CheckPrivateDataArgs {
+    pub struct CheckPrivateDataArgs {
         value: u8,
         expect_no_data: bool,
     }
 
     #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-    struct SleepArgs {
+    pub struct SleepArgs {
         duration: std::time::Duration,
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    enum Routines {
+    pub enum Routines {
         CheckContext,
         CheckPrivateData(CheckPrivateDataArgs),
         Nop,
